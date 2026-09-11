@@ -1,9 +1,11 @@
 {
-  "extends": "../../tsconfig.json",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "strict": true,
-    "jsx": "react-jsx",
+    "module": "esnext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "composite": false,
+    "noEmit": true,
     "paths": {
       "@/*": ["./src/*"]
     }

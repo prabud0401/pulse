@@ -49,7 +49,7 @@ export default function TabLayout() {
         name="tasks"
         options={{
           title: 'Tasks',
-          tabBarIcon: ({ color }) => <MaterialCommunityIcons name="check-box-outline" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <MaterialCommunityIcons name="checkbox-outline" size={24} color={color} />,
         }}
       />
       <Tabs.Screen

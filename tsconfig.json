@@ -1,1 +1,3 @@
-{\n  "extends": "./tsconfig.base.json"\n}
+{
+  "extends": "./tsconfig.base.json"
+}
