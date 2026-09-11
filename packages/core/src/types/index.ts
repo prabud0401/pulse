@@ -70,11 +70,8 @@ export interface PluginDefinition {
   version: string;
 }
 
-export interface DashboardWidget {
-  id: string;
-  type: string;
-  config: Record<string, unknown>;
-}
-
 export * from './plugins';
+export * from './dashboard';
+export * from './notifications';
+export * from './finance';
 

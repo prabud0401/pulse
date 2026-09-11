@@ -12,6 +12,13 @@ import { authRouter } from './routes/auth';
 import { usersRouter } from './routes/users';
 import { workspacesRouter } from './routes/workspaces';
 import { integrationsRouter } from './routes/integrations';
+import { dashboardRouter } from './routes/dashboard';
+import { notificationsRouter } from './routes/notifications';
+import { financeRouter } from './routes/finance';
+import { aiRouter } from './routes/ai';
+import { tasksRouter } from './routes/tasks';
+import { projectsRouter } from './routes/projects';
+import { automationsRouter } from './routes/automations';
 import { errorHandler } from './middleware/error-handler';
 
 dotenv.config();
@@ -37,7 +44,13 @@ export function createApp(): express.Express {
   app.use('/api/users', usersRouter);
   app.use('/api/workspaces', workspacesRouter);
   app.use('/api/integrations', integrationsRouter);
-
+  app.use('/api/dashboard', dashboardRouter);
+  app.use('/api/notifications', notificationsRouter);
+  app.use('/api/finance', financeRouter);
+  app.use('/api/ai', aiRouter);
+  app.use('/api/tasks', tasksRouter);
+  app.use('/api/projects', projectsRouter);
+  app.use('/api/automations', automationsRouter);
 
   app.use(errorHandler);
 

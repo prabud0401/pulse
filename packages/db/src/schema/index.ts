@@ -4,4 +4,9 @@ export * from './oauth-accounts';
 export * from './workspaces';
 export * from './user-settings';
 export * from './integrations';
-
+export * from './dashboard';
+export * from './notifications';
+export * from './finance';
+export * from './ai';
+export * from './tasks';
+export * from './automations';

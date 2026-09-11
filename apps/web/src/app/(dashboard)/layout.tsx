@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/ui/sidebar';
 import { Avatar } from '@/components/ui/avatar';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -30,6 +31,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="font-medium text-text">Workspace</div>
           
           <div className="flex items-center gap-4">
+            <NotificationBell />
             <ThemeToggle />
             <Avatar fallback={user?.name?.[0]?.toUpperCase() || 'U'} />
           </div>

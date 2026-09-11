@@ -1,5 +1,14 @@
 export * from './types/index';
 export * from './types/plugins';
+export * from './types/dashboard';
+export * from './types/notifications';
+export * from './types/finance';
+export * from './types/ai';
+export * from './types/tasks';
+export * from './types/automations';
+export * from './finance/classifier';
+export * from './finance/scenarios';
+export * from './ai/context-builder';
+export * from './automation/engine';
 export * from './errors';
 export * from './utils/index';
-
