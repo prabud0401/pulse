@@ -47,11 +47,13 @@ async function main() {
       const subCmd = args[1];
       if (subCmd === 'probe') {
         const targetUrl = args[2] || 'https://prabu-life-os-production.up.railway.app/sse';
+        const authToken = args[3] || process.env.MCP_API_KEY || 'ed24fd25b7274c549a03105806eefcc2af5e9a4b755893f02a1a757968b5265b';
         console.log(`🔌 Probing Remote MCP Server at: ${targetUrl} ...\n`);
         try {
           const { MCPClientGateway } = await import('../packages/api/src/services/mcp-client');
-          const gateway = new MCPClientGateway(10000);
-          const tools = await gateway.listTools({ url: targetUrl, transport: 'sse' });
+          const gateway = new MCPClientGateway(15000);
+          const transport = targetUrl.endsWith('/legacy') ? 'sse' : 'streamable_http';
+          const tools = await gateway.listTools({ url: targetUrl, transport, authToken });
           console.log(`✅ Connection Successful! Discovered ${tools.length} Tools:`);
           tools.forEach((t, i) => {
             console.log(`   ${i + 1}. \x1b[36m${t.name}\x1b[0m — ${t.description || 'No description'}`);
