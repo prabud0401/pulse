@@ -6,9 +6,15 @@ export * from './types/finance';
 export * from './types/ai';
 export * from './types/tasks';
 export * from './types/automations';
+export * from './types/scheduler';
 export * from './finance/classifier';
 export * from './finance/scenarios';
+export * from './finance/fx';
+export * from './finance/export';
 export * from './ai/context-builder';
+export * from './ai/tool-executor';
+export * from './ai/prompt-templates';
 export * from './automation/engine';
 export * from './errors';
 export * from './utils/index';
+

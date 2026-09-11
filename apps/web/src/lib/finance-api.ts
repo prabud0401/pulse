@@ -5,6 +5,7 @@ import {
   IncomeSummary,
   ScenarioProjection,
   Budget,
+  NetWorthResult,
 } from '@/types/finance';
 
 export interface ApiResponse<T> {
@@ -129,5 +130,76 @@ export const financeApi = {
   ingestSms: async (data: { sender: string; text: string; receivedAt?: string }) => {
     const res = await apiClient.post<ApiResponse<any>>('/finance/ingest/sms', data);
     return res.data;
+  },
+
+  // Net Worth & FX
+  getNetWorth: async (currency: string = 'USD') => {
+    const res = await apiClient.get<ApiResponse<NetWorthResult>>(`/finance/net-worth?currency=${encodeURIComponent(currency)}`);
+    return res.data;
+  },
+
+  // Export Studio
+  getExportReport: async (currency: string = 'USD') => {
+    const res = await apiClient.get<ApiResponse<{
+      markdown: string;
+      report: any;
+      summary: any;
+      netWorth: NetWorthResult;
+    }>>(`/finance/export/report?currency=${encodeURIComponent(currency)}`);
+    return res.data;
+  },
+
+  downloadCSV: async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pulse_token') : null;
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
+    const cleanBase = baseUrl.replace(/\/+$/, '');
+    const url = `${cleanBase}/finance/export/csv`;
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Failed to download CSV: ${response.statusText}`);
+    }
+
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = 'pulse-transactions.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+  },
+
+  downloadReportMarkdown: async (currency: string = 'USD') => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pulse_token') : null;
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
+    const cleanBase = baseUrl.replace(/\/+$/, '');
+    const url = `${cleanBase}/finance/export/report?currency=${encodeURIComponent(currency)}&download=true`;
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Failed to download report: ${response.statusText}`);
+    }
+
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = 'pulse-financial-report.md';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
   },
 };

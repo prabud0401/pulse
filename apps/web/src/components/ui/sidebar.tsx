@@ -5,7 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useSidebarStore } from "@/store/sidebar"
-import { LayoutDashboard, Wallet, CheckSquare, Sparkles, Zap, Plug, Settings, ChevronLeft, ChevronRight } from "lucide-react"
+import { LayoutDashboard, Wallet, CheckSquare, Sparkles, Zap, Plug, Terminal, Settings, ChevronLeft, ChevronRight } from "lucide-react"
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
@@ -14,6 +14,7 @@ const menuItems = [
   { icon: Sparkles, label: 'Assistant', href: '/assistant' },
   { icon: Zap, label: 'Automations', href: '/automations' },
   { icon: Plug, label: 'Integrations', href: '/integrations' },
+  { icon: Terminal, label: 'Terminal', href: '/terminal' },
 ]
 
 export function Sidebar() {

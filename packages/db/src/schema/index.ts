@@ -10,3 +10,4 @@ export * from './finance';
 export * from './ai';
 export * from './tasks';
 export * from './automations';
+export * from './scheduler';

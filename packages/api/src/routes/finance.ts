@@ -15,8 +15,12 @@ import {
   ValidationError,
   classifyTransaction,
   calculateScenarioProjections,
+  calculateNetWorth,
+  generateTransactionsCSV,
+  generateFinancialReportMarkdown,
   TransactionType,
   ClassificationRule,
+  NetWorthAccountInput,
 } from '@pulse/core';
 
 export const financeRouter: Router = Router();
@@ -767,6 +771,297 @@ financeRouter.get('/report', requireAuth, async (req: Request, res: Response, ne
         },
         scenarios,
         markdown,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ==========================================
+// 4.5. NET WORTH & EXPORT STUDIO
+// ==========================================
+
+// GET /api/finance/net-worth?currency=USD — returns aggregated net worth and asset allocation breakdown
+financeRouter.get('/net-worth', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.userId;
+    const workspaceId = await getWorkspaceId(req, userId);
+    const targetCurrency = ((req.query.currency as string) || 'USD').toUpperCase();
+
+    // 1. Fetch bank accounts
+    const accounts = await db
+      .select()
+      .from(bankAccounts)
+      .where(and(eq(bankAccounts.workspaceId, workspaceId), eq(bankAccounts.isActive, true)))
+      .orderBy(desc(bankAccounts.createdAt));
+
+    // 2. Aggregate transactions per account
+    const txBalances = await db
+      .select({
+        accountId: financialTransactions.accountId,
+        credits: sql<number>`COALESCE(SUM(CASE WHEN ${financialTransactions.direction} = 'credit' THEN ${financialTransactions.amount}::numeric ELSE 0 END), 0)::float`,
+        debits: sql<number>`COALESCE(SUM(CASE WHEN ${financialTransactions.direction} = 'debit' THEN ${financialTransactions.amount}::numeric ELSE 0 END), 0)::float`,
+      })
+      .from(financialTransactions)
+      .where(eq(financialTransactions.workspaceId, workspaceId))
+      .groupBy(financialTransactions.accountId);
+
+    const balanceMap = new Map<string, { credits: number; debits: number }>();
+    let unassignedCredits = 0;
+    let unassignedDebits = 0;
+
+    for (const row of txBalances) {
+      if (row.accountId) {
+        balanceMap.set(row.accountId, { credits: row.credits, debits: row.debits });
+      } else {
+        unassignedCredits += row.credits;
+        unassignedDebits += row.debits;
+      }
+    }
+
+    const netWorthAccounts: NetWorthAccountInput[] = accounts.map((acc) => {
+      const stats = balanceMap.get(acc.id) || { credits: 0, debits: 0 };
+      const isLiability = acc.accountType === 'credit_card' || acc.accountType === 'loan';
+      const balance = isLiability ? (stats.debits - stats.credits) : (stats.credits - stats.debits);
+
+      return {
+        id: acc.id,
+        bankName: acc.bankName,
+        label: acc.label,
+        accountType: acc.accountType,
+        currency: acc.currency || 'USD',
+        balance,
+      };
+    });
+
+    // If there are unassigned transactions, or no accounts linked, include unassigned cash ledger
+    if (unassignedCredits > 0 || unassignedDebits > 0 || accounts.length === 0) {
+      const unassignedNet = unassignedCredits - unassignedDebits;
+      netWorthAccounts.push({
+        id: 'unassigned-ledger',
+        bankName: 'Pulse Ledger',
+        label: 'Unassigned Cash Balance',
+        accountType: 'savings',
+        currency: 'USD',
+        balance: unassignedNet,
+      });
+    }
+
+    const netWorth = calculateNetWorth(netWorthAccounts, targetCurrency);
+
+    res.json({
+      success: true,
+      data: netWorth,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/finance/export/csv — streams downloaded CSV file attachment
+financeRouter.get('/export/csv', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.userId;
+    const workspaceId = await getWorkspaceId(req, userId);
+    const { fromDate, toDate, type, category } = req.query;
+
+    const conditions = [eq(financialTransactions.workspaceId, workspaceId)];
+    if (fromDate && typeof fromDate === 'string') {
+      conditions.push(gte(financialTransactions.transactionDate, new Date(fromDate)));
+    }
+    if (toDate && typeof toDate === 'string') {
+      conditions.push(lte(financialTransactions.transactionDate, new Date(toDate)));
+    }
+    if (type && typeof type === 'string') {
+      conditions.push(eq(financialTransactions.type, type));
+    }
+    if (category && typeof category === 'string') {
+      conditions.push(eq(financialTransactions.category, category));
+    }
+
+    const transactions = await db
+      .select({
+        id: financialTransactions.id,
+        workspaceId: financialTransactions.workspaceId,
+        accountId: financialTransactions.accountId,
+        type: financialTransactions.type,
+        category: financialTransactions.category,
+        direction: financialTransactions.direction,
+        amount: financialTransactions.amount,
+        currency: financialTransactions.currency,
+        description: financialTransactions.description,
+        counterparty: financialTransactions.counterparty,
+        referenceId: financialTransactions.referenceId,
+        source: financialTransactions.source,
+        transactionDate: financialTransactions.transactionDate,
+        bankName: bankAccounts.bankName,
+        accountLabel: bankAccounts.label,
+      })
+      .from(financialTransactions)
+      .leftJoin(bankAccounts, eq(financialTransactions.accountId, bankAccounts.id))
+      .where(and(...conditions))
+      .orderBy(desc(financialTransactions.transactionDate));
+
+    const csvData = generateTransactionsCSV(transactions);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="pulse-transactions.csv"');
+    res.status(200).send(csvData);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/finance/export/report — returns formatted printable financial audit report
+financeRouter.get('/export/report', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.userId;
+    const workspaceId = await getWorkspaceId(req, userId);
+    const targetCurrency = ((req.query.currency as string) || 'USD').toUpperCase();
+    const download = req.query.download === 'true';
+
+    // 1. Transactions
+    const txs = await db
+      .select()
+      .from(financialTransactions)
+      .where(eq(financialTransactions.workspaceId, workspaceId))
+      .orderBy(desc(financialTransactions.transactionDate));
+
+    // 2. Summary stats
+    let totalIncome = 0;
+    let totalExpense = 0;
+    let bankingFees = 0;
+    let internalTransfers = 0;
+    let cardRepayments = 0;
+    let brokerInward = 0;
+    let brokerOutward = 0;
+    const monthlyMap: Record<string, { income: number; expense: number; fees: number; count: number }> = {};
+
+    for (const tx of txs) {
+      const amt = parseFloat(tx.amount as unknown as string) || 0;
+      const date = new Date(tx.transactionDate);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+      if (!monthlyMap[monthKey]) {
+        monthlyMap[monthKey] = { income: 0, expense: 0, fees: 0, count: 0 };
+      }
+      monthlyMap[monthKey].count += 1;
+
+      if (tx.type === 'BANKING_FEE') {
+        bankingFees += amt;
+        monthlyMap[monthKey].fees += amt;
+      } else if (tx.type === 'INTERNAL_TRANSFER') {
+        internalTransfers += amt;
+      } else if (tx.type === 'CARD_REPAYMENT') {
+        cardRepayments += amt;
+      } else if (tx.type === 'BROKER_INWARD') {
+        brokerInward += amt;
+      } else if (tx.type === 'BROKER_OUTWARD') {
+        brokerOutward += amt;
+      } else if (tx.direction === 'credit') {
+        totalIncome += amt;
+        monthlyMap[monthKey].income += amt;
+      } else {
+        totalExpense += amt;
+        monthlyMap[monthKey].expense += amt;
+      }
+    }
+
+    const netPersonalSavings = Math.round((totalIncome - totalExpense - bankingFees) * 100) / 100;
+    const savingsRate = totalIncome > 0 ? Math.round((netPersonalSavings / totalIncome) * 1000) / 10 : 0;
+
+    const monthlyBreakdown = Object.entries(monthlyMap)
+      .map(([month, data]) => ({
+        month,
+        income: Math.round(data.income * 100) / 100,
+        expense: Math.round(data.expense * 100) / 100,
+        fees: Math.round(data.fees * 100) / 100,
+        netSavings: Math.round((data.income - data.expense - data.fees) * 100) / 100,
+        transactionCount: data.count,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+
+    // 3. Scenarios
+    const scenarios = calculateScenarioProjections({
+      monthlyIncome: totalIncome || 5000,
+      monthlyExpenses: totalExpense || 3000,
+      monthlyFees: bankingFees || 35,
+    });
+
+    // 4. Accounts & Net worth
+    const accounts = await db
+      .select()
+      .from(bankAccounts)
+      .where(and(eq(bankAccounts.workspaceId, workspaceId), eq(bankAccounts.isActive, true)));
+
+    const netWorthAccounts: NetWorthAccountInput[] = accounts.map((acc) => {
+      const isLiability = acc.accountType === 'credit_card' || acc.accountType === 'loan';
+      let bal = 0;
+      for (const t of txs) {
+        if (t.accountId === acc.id) {
+          const amt = parseFloat(t.amount as unknown as string) || 0;
+          if (isLiability) {
+            bal += (t.direction === 'debit' ? amt : -amt);
+          } else {
+            bal += (t.direction === 'credit' ? amt : -amt);
+          }
+        }
+      }
+      return {
+        id: acc.id,
+        bankName: acc.bankName,
+        label: acc.label,
+        accountType: acc.accountType,
+        currency: acc.currency || 'USD',
+        balance: bal,
+      };
+    });
+
+    const netWorth = calculateNetWorth(netWorthAccounts, targetCurrency);
+
+    const reportObj = {
+      generatedAt: new Date().toISOString(),
+      summary: {
+        totalIncome: Math.round(totalIncome * 100) / 100,
+        totalExpense: Math.round(totalExpense * 100) / 100,
+        bankingFees: Math.round(bankingFees * 100) / 100,
+        internalTransfers: Math.round(internalTransfers * 100) / 100,
+        cardRepayments: Math.round(cardRepayments * 100) / 100,
+        brokerInward: Math.round(brokerInward * 100) / 100,
+        brokerOutward: Math.round(brokerOutward * 100) / 100,
+        netPersonalSavings,
+        savingsRate,
+        transactionCount: txs.length,
+      },
+      scenarios,
+    };
+
+    const summaryObj = {
+      totalIncome: Math.round(totalIncome * 100) / 100,
+      totalExpense: Math.round(totalExpense * 100) / 100,
+      totalFees: Math.round(bankingFees * 100) / 100,
+      netSavings: netPersonalSavings,
+      savingsRate,
+      transactionCount: txs.length,
+      monthlyBreakdown,
+    };
+
+    const markdown = generateFinancialReportMarkdown(reportObj, summaryObj, netWorth);
+
+    if (download) {
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="pulse-financial-report.md"');
+      return res.status(200).send(markdown);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        markdown,
+        report: reportObj,
+        summary: summaryObj,
+        netWorth,
       },
     });
   } catch (error) {

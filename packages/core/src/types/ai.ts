@@ -62,6 +62,15 @@ export interface AIConnectedTool {
   enabled?: boolean;
 }
 
+export interface AIToolInvocationResult {
+  toolName: string;
+  integrationName?: string;
+  durationMs: number;
+  status: 'success' | 'error';
+  output: Record<string, unknown> | Array<unknown> | unknown;
+  error?: string;
+}
+
 export interface AIContext {
   activeTasks: AITaskSummary[];
   financialSummary?: AIFinancialSummary | null;
@@ -69,6 +78,7 @@ export interface AIContext {
   workspaceName?: string;
   userName?: string;
   currentDate: string;
+  lastToolInvocation?: AIToolInvocationResult | null;
 }
 
 export interface AIChatRequest {
@@ -88,4 +98,6 @@ export interface AIChatResponse {
     toolsCount: number;
     hasFinanceContext: boolean;
   };
+  toolExecution?: AIToolInvocationResult | null;
 }
+

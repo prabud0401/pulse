@@ -18,9 +18,47 @@ export type TransactionType =
   | 'TRANSPORT'
   | 'UNCATEGORIZED';
 
-export type AccountType = 'savings' | 'checking' | 'credit_card' | 'wallet' | 'investment';
+export type AccountType = 'savings' | 'checking' | 'credit_card' | 'wallet' | 'investment' | 'loan';
 export type TransactionDirection = 'credit' | 'debit';
 export type TransactionSource = 'sms' | 'email' | 'pdf' | 'manual' | 'api' | 'csv';
+
+export type SupportedCurrency = 'USD' | 'LKR' | 'EUR' | 'GBP' | 'INR' | 'SGD' | 'AED' | 'CAD';
+
+export interface NetWorthBreakdown {
+  cash: number;
+  wallets: number;
+  investments: number;
+  liabilities: number;
+  byType: Record<string, number>;
+}
+
+export interface CurrencyDistributionItem {
+  currency: string;
+  rawAmount: number;
+  convertedAmount: number;
+  percentage: number;
+}
+
+export interface AccountNetWorthItem {
+  id?: string;
+  bankName: string;
+  label: string;
+  accountType: string;
+  currency: string;
+  originalBalance: number;
+  convertedBalance: number;
+  isLiability: boolean;
+}
+
+export interface NetWorthResult {
+  baseCurrency: string;
+  totalNetWorth: number;
+  totalAssets: number;
+  totalLiabilities: number;
+  breakdown: NetWorthBreakdown;
+  currencyDistribution: Record<string, CurrencyDistributionItem>;
+  accounts: AccountNetWorthItem[];
+}
 
 export interface BankAccount {
   id: string;

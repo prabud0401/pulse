@@ -11,11 +11,13 @@ import {
   bankAccounts,
   integrations,
   integrationTools,
+  toolInvocations,
   workspaceMembers,
   eq,
   and,
   desc,
   ne,
+  sql,
 } from '@pulse/db';
 import {
   NotFoundError,
@@ -23,8 +25,16 @@ import {
   buildAIContext,
   formatContextPrompt,
   generateContextualMockResponse,
+  detectToolCall,
+  executeAIToolCall,
+  PROMPT_TEMPLATES,
+  getPromptTemplatesByCategory,
+  searchPromptTemplates,
   AIContext,
+  AIToolInvocationResult,
 } from '@pulse/core';
+import { mcpClient, parseMCPConfig } from '../services/mcp-client';
+
 
 export const aiRouter: Router = Router();
 
@@ -50,7 +60,11 @@ async function resolveWorkspaceId(userId: string, requestedWorkspaceId?: string)
 /**
  * Gather dynamic AI context from database
  */
-async function gatherAIContext(workspaceId: string, userId: string): Promise<AIContext> {
+async function gatherAIContext(
+  workspaceId: string,
+  userId: string,
+  lastToolInvocation?: AIToolInvocationResult | null
+): Promise<AIContext> {
   // 1. Fetch active tasks
   const activeTasksList = await db
     .select({
@@ -133,10 +147,11 @@ async function gatherAIContext(workspaceId: string, userId: string): Promise<AIC
     activeTasks: activeTasksList,
     financialSummary,
     connectedTools,
+    lastToolInvocation,
   });
 }
 
-// POST /api/ai/chat — send message, executes Gemini/OpenAI/Mock completion with context injection
+// POST /api/ai/chat — send message, executes Gemini/OpenAI/Mock completion with tool calling & context injection
 aiRouter.post('/chat', requireAuth, async (req, res, next) => {
   try {
     const userId = req.user!.userId;
@@ -154,11 +169,96 @@ aiRouter.post('/chat', requireAuth, async (req, res, next) => {
 
     const workspaceId = await resolveWorkspaceId(userId, reqWorkspaceId);
 
-    // 1. Gather live context
-    const aiContext = await gatherAIContext(workspaceId, userId);
+    // 1. Fetch available tools from integration_tools table for the user's workspace
+    const workspaceTools = await db
+      .select({
+        id: integrationTools.id,
+        name: integrationTools.name,
+        description: integrationTools.description,
+        inputSchema: integrationTools.inputSchema,
+        enabled: integrationTools.enabled,
+        usageCount: integrationTools.usageCount,
+        integrationId: integrationTools.integrationId,
+        integrationName: integrations.name,
+        integrationType: integrations.type,
+        integrationConfig: integrations.config,
+        integrationStatus: integrations.status,
+      })
+      .from(integrationTools)
+      .innerJoin(integrations, eq(integrationTools.integrationId, integrations.id))
+      .where(and(eq(integrations.workspaceId, workspaceId), eq(integrationTools.enabled, true)));
+
+    // 2. Detect if user's prompt is requesting a tool action
+    const toolDetection = detectToolCall(message, workspaceTools);
+    let toolExecution: AIToolInvocationResult | null = null;
+
+    if (toolDetection.shouldCallTool && toolDetection.toolName) {
+      const toolName = toolDetection.toolName;
+      const toolArgs = toolDetection.args || {};
+      const matchedTool = workspaceTools.find(
+        (t) => t.name.toLowerCase() === toolName.toLowerCase()
+      );
+
+      const startTime = Date.now();
+      if (
+        matchedTool &&
+        matchedTool.integrationType === 'mcp_remote' &&
+        matchedTool.integrationStatus === 'connected'
+      ) {
+        try {
+          const config = matchedTool.integrationConfig as Record<string, unknown>;
+          const mcpConfig = parseMCPConfig(config);
+          const rawResult = await mcpClient.callTool(mcpConfig, matchedTool.name, toolArgs);
+          const durationMs = Date.now() - startTime;
+          toolExecution = {
+            toolName: matchedTool.name,
+            integrationName: matchedTool.integrationName,
+            durationMs,
+            status: 'success',
+            output: rawResult as any,
+          };
+        } catch (err: any) {
+          toolExecution = await executeAIToolCall(toolName, toolArgs, workspaceId);
+        }
+      } else {
+        toolExecution = await executeAIToolCall(toolName, toolArgs, workspaceId);
+      }
+
+      // Log invocation in database if tool was matched or workspace has an integration
+      try {
+        const targetIntegrationId = matchedTool?.integrationId || workspaceTools[0]?.integrationId;
+        if (targetIntegrationId) {
+          await db.insert(toolInvocations).values({
+            integrationId: targetIntegrationId,
+            toolName: toolExecution.toolName,
+            userId,
+            input: toolArgs,
+            output: toolExecution.output as any,
+            status: toolExecution.status,
+            durationMs: toolExecution.durationMs,
+            errorMessage: toolExecution.error || null,
+          });
+
+          if (matchedTool) {
+            await db
+              .update(integrationTools)
+              .set({
+                usageCount: sql`${integrationTools.usageCount} + 1`,
+                lastUsedAt: new Date(),
+              })
+              .where(eq(integrationTools.id, matchedTool.id));
+          }
+        }
+      } catch (logErr) {
+        // Non-critical logging failure
+      }
+    }
+
+    // 3. Gather live context with synthesized tool result
+    const aiContext = await gatherAIContext(workspaceId, userId, toolExecution);
     const systemPrompt = formatContextPrompt(aiContext);
 
-    // 2. Resolve or create conversation
+    // 4. Resolve or create conversation
     let convId = requestedConvId;
     if (convId) {
       const [existingConv] = await db
@@ -187,7 +287,7 @@ aiRouter.post('/chat', requireAuth, async (req, res, next) => {
       convId = newConv.id;
     }
 
-    // 3. Save User Message
+    // 5. Save User Message
     const [userMsg] = await db
       .insert(aiMessages)
       .values({
@@ -198,7 +298,7 @@ aiRouter.post('/chat', requireAuth, async (req, res, next) => {
       })
       .returning();
 
-    // 4. Check for provider API key
+    // 6. Check for provider API key
     const [savedProvider] = await db
       .select()
       .from(aiProviders)
@@ -264,7 +364,26 @@ aiRouter.post('/chat', requireAuth, async (req, res, next) => {
       tokensUsed = Math.round((message.length + assistantReply.length) / 4);
     }
 
-    // 5. Save Assistant Message
+    // 7. Save Assistant Message with Tool Calls and Tool Results
+    const toolCallsData = toolExecution
+      ? [
+          {
+            tool: toolExecution.toolName,
+            args: toolDetection.args || {},
+            durationMs: toolExecution.durationMs,
+            status: toolExecution.status,
+          },
+        ]
+      : null;
+    const toolResultsData = toolExecution
+      ? [
+          {
+            tool: toolExecution.toolName,
+            output: toolExecution.output,
+          },
+        ]
+      : null;
+
     const [assistantMsg] = await db
       .insert(aiMessages)
       .values({
@@ -273,6 +392,8 @@ aiRouter.post('/chat', requireAuth, async (req, res, next) => {
         content: assistantReply,
         model,
         tokensUsed,
+        toolCalls: toolCallsData,
+        toolResults: toolResultsData,
       })
       .returning();
 
@@ -288,6 +409,7 @@ aiRouter.post('/chat', requireAuth, async (req, res, next) => {
         conversationId: convId,
         userMessage: userMsg,
         message: assistantMsg,
+        toolExecution,
         contextSummary: {
           tasksCount: aiContext.activeTasks.length,
           toolsCount: aiContext.connectedTools?.length || 0,
@@ -295,6 +417,7 @@ aiRouter.post('/chat', requireAuth, async (req, res, next) => {
         },
       },
     });
+
   } catch (error) {
     next(error);
   }
@@ -498,3 +621,26 @@ aiRouter.post('/providers', requireAuth, async (req, res, next) => {
     next(error);
   }
 });
+
+// GET /api/ai/prompt-templates — list pre-crafted prompt templates from Prompt Studio
+aiRouter.get('/prompt-templates', requireAuth, async (req, res, next) => {
+  try {
+    const { category, search } = req.query;
+
+    let templates = PROMPT_TEMPLATES;
+    if (category && typeof category === 'string' && category !== 'All') {
+      templates = getPromptTemplatesByCategory(category as any);
+    }
+    if (search && typeof search === 'string' && search.trim()) {
+      templates = searchPromptTemplates(search.trim());
+    }
+
+    res.json({
+      success: true,
+      data: templates,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+

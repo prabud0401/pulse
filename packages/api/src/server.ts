@@ -19,6 +19,9 @@ import { aiRouter } from './routes/ai';
 import { tasksRouter } from './routes/tasks';
 import { projectsRouter } from './routes/projects';
 import { automationsRouter } from './routes/automations';
+import { terminalRouter } from './routes/terminal';
+import { schedulerRouter } from './routes/scheduler';
+import { startScheduler } from './services/scheduler';
 import { errorHandler } from './middleware/error-handler';
 
 dotenv.config();
@@ -51,6 +54,8 @@ export function createApp(): express.Express {
   app.use('/api/tasks', tasksRouter);
   app.use('/api/projects', projectsRouter);
   app.use('/api/automations', automationsRouter);
+  app.use('/api/terminal', terminalRouter);
+  app.use('/api/scheduler', schedulerRouter);
 
   app.use(errorHandler);
 
@@ -62,5 +67,6 @@ if (require.main === module) {
   const app = createApp();
   app.listen(PORT, () => {
     console.log(`API server running on port ${PORT}`);
+    startScheduler();
   });
 }

@@ -23,6 +23,16 @@ import {
   Layers,
   Send,
   MessageSquare,
+  Download,
+  Printer,
+  FileText,
+  FileDown,
+  Globe,
+  Coins,
+  Scale,
+  PieChart,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,6 +45,8 @@ import {
   FinancialTransaction,
   IncomeSummary,
   ScenarioProjection,
+  SupportedCurrency,
+  NetWorthResult,
 } from '@/types/finance';
 import { cn } from '@/lib/utils';
 
@@ -48,10 +60,27 @@ export default function FinanceDashboardPage() {
   const [isAddTxOpen, setIsAddTxOpen] = React.useState(false);
   const [isAddAccountOpen, setIsAddAccountOpen] = React.useState(false);
   const [isSmsModalOpen, setIsSmsModalOpen] = React.useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = React.useState(false);
+  const [isDownloadingCSV, setIsDownloadingCSV] = React.useState(false);
+  const [isDownloadingReport, setIsDownloadingReport] = React.useState(false);
+  const [copiedReport, setCopiedReport] = React.useState(false);
+
+  // Currency state
+  const [selectedCurrency, setSelectedCurrency] = React.useState<SupportedCurrency>('USD');
 
   // Filters & search
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>('all');
   const [searchQuery, setSearchQuery] = React.useState('');
+
+  // 0. Fetch Net Worth
+  const {
+    data: netWorthData,
+    isLoading: isNetWorthLoading,
+    refetch: refetchNetWorth,
+  } = useQuery({
+    queryKey: ['finance-net-worth', selectedCurrency],
+    queryFn: () => financeApi.getNetWorth(selectedCurrency),
+  });
 
   // 1. Fetch Accounts
   const {
@@ -115,6 +144,7 @@ export default function FinanceDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
       queryClient.invalidateQueries({ queryKey: ['finance-summary'] });
       queryClient.invalidateQueries({ queryKey: ['finance-report'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-net-worth'] });
       setIsAddTxOpen(false);
     },
   });
@@ -123,6 +153,7 @@ export default function FinanceDashboardPage() {
     mutationFn: financeApi.createAccount,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['finance-accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-net-worth'] });
       setIsAddAccountOpen(false);
     },
   });
@@ -133,6 +164,7 @@ export default function FinanceDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
       queryClient.invalidateQueries({ queryKey: ['finance-summary'] });
       queryClient.invalidateQueries({ queryKey: ['finance-report'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-net-worth'] });
       setIsSmsModalOpen(false);
     },
   });
@@ -143,8 +175,103 @@ export default function FinanceDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
       queryClient.invalidateQueries({ queryKey: ['finance-summary'] });
       queryClient.invalidateQueries({ queryKey: ['finance-report'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-net-worth'] });
     },
   });
+
+  // Export handlers
+  const handleDownloadCSV = async () => {
+    try {
+      setIsDownloadingCSV(true);
+      await financeApi.downloadCSV();
+    } catch (err) {
+      console.error('Download CSV failed', err);
+    } finally {
+      setIsDownloadingCSV(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    try {
+      setIsDownloadingReport(true);
+      await financeApi.downloadReportMarkdown(selectedCurrency);
+    } catch (err) {
+      console.error('Download report failed', err);
+    } finally {
+      setIsDownloadingReport(false);
+    }
+  };
+
+  const CURRENCY_SYMBOLS: Record<string, string> = {
+    USD: '$',
+    LKR: 'Rs. ',
+    EUR: '€',
+    GBP: '£',
+    INR: '₹',
+    SGD: 'S$',
+    AED: 'AED ',
+    CAD: 'CA$',
+  };
+
+  const FALLBACK_FX: Record<string, number> = {
+    USD: 1.0,
+    LKR: 312.0,
+    EUR: 0.92,
+    GBP: 0.79,
+    INR: 83.5,
+    SGD: 1.35,
+    AED: 3.67,
+    CAD: 1.36,
+  };
+
+  const formatAmount = (val: number, currency: string = selectedCurrency): string => {
+    const sym = CURRENCY_SYMBOLS[currency] || `${currency} `;
+    const absStr = Math.abs(val).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return `${val < 0 ? '-' : ''}${sym}${absStr}`;
+  };
+
+  const fxMult = FALLBACK_FX[selectedCurrency] || 1.0;
+  const netWorth: NetWorthResult = netWorthData || {
+    baseCurrency: selectedCurrency,
+    totalNetWorth: Math.round(18450 * fxMult * 100) / 100,
+    totalAssets: Math.round(24200 * fxMult * 100) / 100,
+    totalLiabilities: Math.round(5750 * fxMult * 100) / 100,
+    breakdown: {
+      cash: Math.round(14200 * fxMult * 100) / 100,
+      wallets: Math.round(2500 * fxMult * 100) / 100,
+      investments: Math.round(7500 * fxMult * 100) / 100,
+      liabilities: Math.round(5750 * fxMult * 100) / 100,
+      byType: {
+        savings: Math.round(14200 * fxMult * 100) / 100,
+        wallet: Math.round(2500 * fxMult * 100) / 100,
+        investment: Math.round(7500 * fxMult * 100) / 100,
+        credit_card: Math.round(5750 * fxMult * 100) / 100,
+      },
+    },
+    currencyDistribution: {
+      [selectedCurrency]: {
+        currency: selectedCurrency,
+        rawAmount: Math.round(18450 * fxMult * 100) / 100,
+        convertedAmount: Math.round(18450 * fxMult * 100) / 100,
+        percentage: 100,
+      },
+    },
+    accounts: [],
+  };
+
+  const cashVal = netWorth.breakdown?.cash || 0;
+  const walletsVal = netWorth.breakdown?.wallets || 0;
+  const investmentsVal = netWorth.breakdown?.investments || 0;
+  const liabilitiesVal = netWorth.breakdown?.liabilities || 0;
+  const totalAssetsVal = Math.max(0.01, netWorth.totalAssets || (cashVal + walletsVal + investmentsVal));
+
+  const cashPct = Math.round((cashVal / totalAssetsVal) * 100);
+  const walletsPct = Math.round((walletsVal / totalAssetsVal) * 100);
+  const investmentsPct = Math.max(0, 100 - cashPct - walletsPct);
+  const debtRatio = totalAssetsVal > 0 ? Math.round((liabilitiesVal / totalAssetsVal) * 100) : 0;
 
   // Fallback defaults for empty state or first load
   const totalIncome = summary?.totalIncome || 6250;

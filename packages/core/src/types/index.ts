@@ -74,4 +74,5 @@ export * from './plugins';
 export * from './dashboard';
 export * from './notifications';
 export * from './finance';
+export * from './scheduler';
 
