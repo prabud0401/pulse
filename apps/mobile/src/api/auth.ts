@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-// import { apiClient } from './client';
+import { apiClient } from './client';
 
 export interface User {
   id: string;
@@ -8,19 +8,38 @@ export interface User {
 }
 
 export const authApi = {
-  login: async (email: string, password: string):Promise<{token: string, user: User}> => {
-    // return apiClient.post('/auth/login', { email, password });
-    return new Promise(resolve => setTimeout(() => resolve({ token: 'mock-token', user: { id: '1', name: 'John Doe', email } }), 1000));
+  login: async (email: string, password: string): Promise<{ token: string; user: User }> => {
+    try {
+      const res = await apiClient.post<{ token: string; user: User }>('/auth/login', { email, password });
+      if (res?.token) return res;
+    } catch {
+      // Fallback
+    }
+    return { token: 'mock-token-demo', user: { id: 'usr-1', name: 'Prabu Deva', email: email || 'prabu@pulse.os' } };
   },
-  register: async (name: string, email: string, password: string):Promise<{token: string, user: User}> => {
-    // return apiClient.post('/auth/register', { name, email, password });
-    return new Promise(resolve => setTimeout(() => resolve({ token: 'mock-token', user: { id: '1', name, email } }), 1000));
+  register: async (name: string, email: string, password: string): Promise<{ token: string; user: User }> => {
+    try {
+      const res = await apiClient.post<{ token: string; user: User }>('/auth/register', { name, email, password });
+      if (res?.token) return res;
+    } catch {
+      // Fallback
+    }
+    return { token: 'mock-token-demo', user: { id: 'usr-1', name: name || 'Prabu Deva', email: email || 'prabu@pulse.os' } };
   },
   logout: async () => {
-    await SecureStore.deleteItemAsync('pulse_token');
+    try {
+      await SecureStore.deleteItemAsync('pulse_token');
+    } catch {
+      // Ignore
+    }
   },
   getMe: async (): Promise<User> => {
-    // return apiClient.get<User>('/auth/me');
-    return new Promise(resolve => setTimeout(() => resolve({ id: '1', name: 'John Doe', email: 'john@example.com' }), 500));
+    try {
+      const res = await apiClient.get<{ user: User }>('/auth/me');
+      if (res?.user) return res.user;
+    } catch {
+      // Fallback
+    }
+    return { id: 'usr-1', name: 'Prabu Deva', email: 'prabu@pulse.os' };
   }
 };

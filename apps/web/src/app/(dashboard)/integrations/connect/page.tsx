@@ -35,7 +35,7 @@ const PRESETS = [
     type: 'mcp_remote' as IntegrationType,
     category: 'finance' as IntegrationCategory,
     url: 'https://prabu-life-os-production.up.railway.app/sse',
-    apiKey: '',
+    apiKey: 'ed24fd25b7274c549a03105806eefcc2af5e9a4b755893f02a1a757968b5265b',
     description: 'Production personal finance intelligence MCP server via Server-Sent Events',
     icon: Wallet,
     color: 'emerald',
