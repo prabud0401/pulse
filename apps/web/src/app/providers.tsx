@@ -5,12 +5,17 @@ import { useState, useEffect } from 'react';
 import { useThemeStore } from '@/store/theme';
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: {
+        refetchOnWindowFocus: false,
+        retry: 1,
+      },
+    },
+  }));
   const { theme } = useThemeStore();
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
 
@@ -18,13 +23,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       root.classList.add(systemTheme);
     } else {
-      root.classList.add(theme);
+      root.classList.add(theme || 'dark');
     }
   }, [theme]);
-
-  if (!mounted) {
-    return <div className="min-h-screen bg-bg" />;
-  }
 
   return (
     <QueryClientProvider client={queryClient}>
