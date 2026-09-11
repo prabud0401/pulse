@@ -5,14 +5,14 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useSidebarStore } from "@/store/sidebar"
-import { LayoutDashboard, Wallet, CheckSquare, Sparkles, Network, Settings, ChevronLeft, ChevronRight } from "lucide-react"
+import { LayoutDashboard, Wallet, CheckSquare, Sparkles, Plug, Settings, ChevronLeft, ChevronRight } from "lucide-react"
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: Wallet, label: 'Finance', href: '/finance' },
   { icon: CheckSquare, label: 'Tasks', href: '/tasks' },
   { icon: Sparkles, label: 'Assistant', href: '/assistant' },
-  { icon: Network, label: 'Integrations', href: '/integrations' },
+  { icon: Plug, label: 'Integrations', href: '/integrations' },
 ]
 
 export function Sidebar() {

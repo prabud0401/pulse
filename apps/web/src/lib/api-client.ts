@@ -16,7 +16,22 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
+  let finalUrl: string;
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    finalUrl = endpoint;
+  } else {
+    const base = BASE_URL.replace(/\/+$/, '');
+    let path = endpoint;
+    if (base.endsWith('/api') && path.startsWith('/api')) {
+      path = path.slice(4);
+    }
+    if (!path.startsWith('/')) {
+      path = `/${path}`;
+    }
+    finalUrl = `${base}${path}`;
+  }
+
+  const response = await fetch(finalUrl, {
     ...options,
     headers,
   });

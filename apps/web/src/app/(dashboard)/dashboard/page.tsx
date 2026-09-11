@@ -1,9 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Network, Wallet, Sparkles } from 'lucide-react';
+import { Plug, Wallet, Sparkles } from 'lucide-react';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -46,14 +47,14 @@ export default function DashboardPage() {
         <Card className="flex flex-col h-full border-dashed">
           <CardHeader className="text-center pb-2">
             <div className="mx-auto bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center mb-4">
-              <Network className="text-primary" size={24} />
+              <Plug className="text-primary" size={24} />
             </div>
             <CardTitle>Connect an Integration</CardTitle>
             <CardDescription>Link your banks, tools, or apps</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 flex items-end justify-center pt-4">
-            <Button variant="outline" className="w-full">Setup Integration</Button>
-          </CardContent>
+            <Link href="/integrations" className="w-full">
+              <Button variant="outline" className="w-full">Setup Integration</Button>
+            </Link>
         </Card>
         
         <Card className="flex flex-col h-full border-dashed">
